@@ -1,10 +1,14 @@
 import { put, head, del } from "@vercel/blob";
 
+// Pass the token explicitly on every call — @vercel/blob otherwise tries
+// Vercel's OIDC auth first, which hangs indefinitely on this project.
+const token = process.env.BLOB_READ_WRITE_TOKEN;
+
 const BOOKS_KEY = "books.json";
 
 async function getJson(pathname) {
   try {
-    const info = await head(pathname);
+    const info = await head(pathname, { token });
     const res = await fetch(info.url, { cache: "no-store" });
     if (!res.ok) return null;
     return await res.json();
@@ -20,6 +24,7 @@ async function putJson(pathname, data) {
     contentType: "application/json",
     addRandomSuffix: false,
     allowOverwrite: true,
+    token,
   });
 }
 
@@ -56,7 +61,7 @@ export async function deleteBook(id) {
   const db = await loadDb();
   delete db.books[id];
   await putJson(BOOKS_KEY, db);
-  await del(`pages/${id}.json`).catch(() => {});
+  await del(`pages/${id}.json`, { token }).catch(() => {});
 }
 
 export async function readPages(id) {

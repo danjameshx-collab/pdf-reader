@@ -12,6 +12,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Pass the token explicitly on every Blob call — @vercel/blob otherwise
+// tries Vercel's OIDC auth first, which hangs indefinitely on this project.
+const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+
 app.get("/api/voices", (req, res) => {
   res.json(VOICES);
 });
@@ -31,6 +35,7 @@ app.get("/api/books/:id", async (req, res) => {
 app.post("/api/blob-upload", async (req, res) => {
   try {
     const jsonResponse = await handleUpload({
+      token: blobToken,
       body: req.body,
       request: req,
       onBeforeGenerateToken: async () => ({
@@ -74,7 +79,7 @@ app.post("/api/books", async (req, res) => {
       rate: 1,
     });
 
-    del(blobUrl).catch(() => {}); // the source PDF isn't needed once we have its text
+    del(blobUrl, { token: blobToken }).catch(() => {}); // the source PDF isn't needed once we have its text
 
     res.status(201).json(book);
   } catch (err) {

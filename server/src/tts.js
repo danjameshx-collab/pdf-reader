@@ -2,6 +2,10 @@ import crypto from "node:crypto";
 import { head, put } from "@vercel/blob";
 import { EdgeTTS } from "edge-tts-universal";
 
+// Pass the token explicitly on every call — @vercel/blob otherwise tries
+// Vercel's OIDC auth first, which hangs indefinitely on this project.
+const token = process.env.BLOB_READ_WRITE_TOKEN;
+
 // Curated set of natural-sounding Edge neural voices worth surfacing in the UI.
 export const VOICES = [
   { id: "en-US-AndrewMultilingualNeural", label: "Andrew (US, male, warm)" },
@@ -35,7 +39,7 @@ export async function synthesizePage(bookId, pageIndex, text, voice, rate) {
   const pathname = cachePathname(bookId, pageIndex, voice, rate);
 
   try {
-    const info = await head(pathname);
+    const info = await head(pathname, { token });
     return info.url;
   } catch (e) {
     if (e.name !== "BlobNotFoundError") throw e;
@@ -53,6 +57,7 @@ export async function synthesizePage(bookId, pageIndex, text, voice, rate) {
     access: "public",
     contentType: "audio/mpeg",
     addRandomSuffix: false,
+    token,
   });
   return blob.url;
 }
