@@ -20,6 +20,14 @@ app.get("/api/voices", (req, res) => {
   res.json(VOICES);
 });
 
+app.get("/api/debug-env", (req, res) => {
+  res.json({
+    hasBlobToken: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+    hasBlobStoreId: Boolean(process.env.BLOB_STORE_ID),
+    hasOidcToken: Boolean(process.env.VERCEL_OIDC_TOKEN),
+  });
+});
+
 app.get("/api/books", async (req, res) => {
   res.json(await listBooks());
 });
