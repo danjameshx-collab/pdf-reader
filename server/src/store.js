@@ -1,4 +1,4 @@
-import { put, head, del } from "@vercel/blob";
+import { put, head, del, BlobNotFoundError } from "@vercel/blob";
 
 // Pass the token explicitly on every call — @vercel/blob otherwise tries
 // Vercel's OIDC auth first, which hangs indefinitely on this project.
@@ -13,7 +13,7 @@ async function getJson(pathname) {
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
-    if (e.name === "BlobNotFoundError") return null;
+    if (e instanceof BlobNotFoundError) return null;
     throw e;
   }
 }
