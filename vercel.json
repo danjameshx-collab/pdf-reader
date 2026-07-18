@@ -2,7 +2,7 @@
   "buildCommand": "cd client && npm install && npm run build",
   "outputDirectory": "client/dist",
   "functions": {
-    "api/index.js": {
+    "api/[...path].js": {
       "maxDuration": 60
     }
   },
