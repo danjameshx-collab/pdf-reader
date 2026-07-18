@@ -28,6 +28,29 @@ app.get("/api/debug-env", (req, res) => {
   });
 });
 
+app.get("/api/debug-blob", async (req, res) => {
+  const { head } = await import("@vercel/blob");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  const started = Date.now();
+  try {
+    const info = await head("books.json", {
+      token: blobToken,
+      abortSignal: controller.signal,
+    });
+    res.json({ ok: true, ms: Date.now() - started, info });
+  } catch (e) {
+    res.json({
+      ok: false,
+      ms: Date.now() - started,
+      errorName: e.name,
+      errorMessage: e.message,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 app.get("/api/books", async (req, res) => {
   res.json(await listBooks());
 });
