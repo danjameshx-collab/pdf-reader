@@ -1,4 +1,11 @@
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+// pdf.js resolves its worker script dynamically, which serverless bundlers
+// can't detect via static analysis — point it at the file explicitly (as a
+// file:// URL, required for the ESM loader on Windows too) so it resolves
+// correctly once bundled (paired with `includeFiles` in vercel.json to make
+// sure the file actually ships with the function).
+GlobalWorkerOptions.workerSrc = import.meta.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
 
 // Joins PDF text-content items into readable page text, restoring
 // paragraph breaks that pdf.js loses (each item is just a positioned run).
