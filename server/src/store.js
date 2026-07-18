@@ -12,7 +12,9 @@ const BOOKS_KEY = "books.json";
 
 async function getJson(pathname) {
   try {
-    const result = await get(pathname, { access: ACCESS, token });
+    // useCache: false — otherwise a read immediately after a write can hit
+    // stale (or falsely "not found") CDN-cached state.
+    const result = await get(pathname, { access: ACCESS, token, useCache: false });
     if (!result) return null;
     const text = await new Response(result.stream).text();
     return JSON.parse(text);

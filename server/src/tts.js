@@ -69,7 +69,7 @@ export async function ensurePageAudio(bookId, pageIndex, text, voice, rate) {
 
 /** Reads cached audio bytes back out of Blob for streaming to the browser. */
 export async function readPageAudio(pathname) {
-  const result = await get(pathname, { access: ACCESS, token });
+  const result = await get(pathname, { access: ACCESS, token, useCache: false });
   if (!result) throw new BlobNotFoundError();
   return Buffer.from(await new Response(result.stream).arrayBuffer());
 }
