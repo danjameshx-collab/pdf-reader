@@ -19,10 +19,14 @@ Upload a PDF, listen to it read aloud with natural neural voices, and resume fro
 
 1. Import this repo into Vercel (already done if you're reading this after a deploy).
 2. In the project's **Storage** tab, add a **Blob** store and connect it to the project —
-   this automatically sets the `BLOB_READ_WRITE_TOKEN` environment variable.
-3. Redeploy (or it'll happen automatically on the next push). `vercel.json` at the repo root
-   already wires up the build: it builds `client/` as the static site and deploys `api/index.js`
-   as the serverless function handling everything under `/api/*`.
+   this sets `BLOB_STORE_ID` (and, depending on your account, `BLOB_READ_WRITE_TOKEN`) as
+   environment variables. `@vercel/blob` supports either: a static read-write token, or
+   `BLOB_STORE_ID` combined with Vercel's OIDC token (make sure "Enable access to System
+   Environment Variables" stays checked in Project Settings → Environments for OIDC to work).
+3. **Env vars only apply to deployments created after they're added** — redeploy once the
+   store is connected (Deployments tab → latest deployment → Redeploy, or just push a commit).
+   `vercel.json` at the repo root wires up the build: it builds `client/` as the static site
+   and deploys `api/index.js` as the serverless function handling everything under `/api/*`.
 
 ## Run it locally
 
