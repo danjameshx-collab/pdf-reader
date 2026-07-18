@@ -1,67 +1,68 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { put, head, del } from "@vercel/blob";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const DATA_DIR = path.join(__dirname, "..", "data");
-export const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
-export const CACHE_DIR = path.join(__dirname, "..", "cache");
-const DB_FILE = path.join(DATA_DIR, "books.json");
+const BOOKS_KEY = "books.json";
 
-for (const dir of [DATA_DIR, UPLOADS_DIR, CACHE_DIR]) {
-  fs.mkdirSync(dir, { recursive: true });
+async function getJson(pathname) {
+  try {
+    const info = await head(pathname);
+    const res = await fetch(info.url, { cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    if (e.name === "BlobNotFoundError") return null;
+    throw e;
+  }
 }
 
-function load() {
-  if (!fs.existsSync(DB_FILE)) return { books: {} };
-  return JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
+async function putJson(pathname, data) {
+  await put(pathname, JSON.stringify(data), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
 }
 
-function save(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+async function loadDb() {
+  return (await getJson(BOOKS_KEY)) || { books: {} };
 }
 
-export function listBooks() {
-  const db = load();
+export async function listBooks() {
+  const db = await loadDb();
   return Object.values(db.books).sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export function getBook(id) {
-  const db = load();
+export async function getBook(id) {
+  const db = await loadDb();
   return db.books[id] || null;
 }
 
-export function putBook(book) {
-  const db = load();
+export async function putBook(book) {
+  const db = await loadDb();
   db.books[book.id] = book;
-  save(db);
+  await putJson(BOOKS_KEY, db);
   return book;
 }
 
-export function updateBook(id, patch) {
-  const db = load();
+export async function updateBook(id, patch) {
+  const db = await loadDb();
   if (!db.books[id]) return null;
   db.books[id] = { ...db.books[id], ...patch };
-  save(db);
+  await putJson(BOOKS_KEY, db);
   return db.books[id];
 }
 
-export function deleteBook(id) {
-  const db = load();
+export async function deleteBook(id) {
+  const db = await loadDb();
   delete db.books[id];
-  save(db);
+  await putJson(BOOKS_KEY, db);
+  await del(`pages/${id}.json`).catch(() => {});
 }
 
-export function pagesFile(id) {
-  return path.join(DATA_DIR, `${id}.pages.json`);
+export async function readPages(id) {
+  return await getJson(`pages/${id}.json`);
 }
 
-export function readPages(id) {
-  const file = pagesFile(id);
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, "utf-8"));
-}
-
-export function writePages(id, pages) {
-  fs.writeFileSync(pagesFile(id), JSON.stringify(pages));
+export async function writePages(id, pages) {
+  await putJson(`pages/${id}.json`, pages);
 }

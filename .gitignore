@@ -2,11 +2,4 @@ node_modules/
 dist/
 .env
 .env.local
-
-# User data — uploaded PDFs, extracted text, cached audio, library metadata
-server/uploads/*
-!server/uploads/.gitkeep
-server/cache/*
-!server/cache/.gitkeep
-server/data/*
-!server/data/.gitkeep
+.vercel

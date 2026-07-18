@@ -1,8 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import crypto from "node:crypto";
+import { head, put } from "@vercel/blob";
 import { EdgeTTS } from "edge-tts-universal";
-import { CACHE_DIR } from "./store.js";
 
 // Curated set of natural-sounding Edge neural voices worth surfacing in the UI.
 export const VOICES = [
@@ -16,12 +14,12 @@ export const VOICES = [
   { id: "en-IE-ConnorNeural", label: "Connor (Irish, male)" },
 ];
 
-function cacheKey(bookId, pageIndex, voice, rate) {
+function cachePathname(bookId, pageIndex, voice, rate) {
   const hash = crypto
     .createHash("sha1")
     .update(`${bookId}:${pageIndex}:${voice}:${rate}`)
     .digest("hex");
-  return path.join(CACHE_DIR, `${hash}.mp3`);
+  return `audio/${hash}.mp3`;
 }
 
 // Edge's SSML rate wants a signed percentage, e.g. "+20%" or "-10%".
@@ -30,9 +28,18 @@ function rateToProsody(rate) {
   return `${pct >= 0 ? "+" : ""}${pct}%`;
 }
 
+/**
+ * Synthesize (or reuse cached) audio for a page and return its public URL.
+ */
 export async function synthesizePage(bookId, pageIndex, text, voice, rate) {
-  const outFile = cacheKey(bookId, pageIndex, voice, rate);
-  if (fs.existsSync(outFile)) return outFile;
+  const pathname = cachePathname(bookId, pageIndex, voice, rate);
+
+  try {
+    const info = await head(pathname);
+    return info.url;
+  } catch (e) {
+    if (e.name !== "BlobNotFoundError") throw e;
+  }
 
   if (!text || !text.trim()) {
     text = "Blank page.";
@@ -42,8 +49,10 @@ export async function synthesizePage(bookId, pageIndex, text, voice, rate) {
   const result = await tts.synthesize();
   const audioBuffer = Buffer.from(await result.audio.arrayBuffer());
 
-  const tmpFile = `${outFile}.tmp`;
-  fs.writeFileSync(tmpFile, audioBuffer);
-  fs.renameSync(tmpFile, outFile);
-  return outFile;
+  const blob = await put(pathname, audioBuffer, {
+    access: "public",
+    contentType: "audio/mpeg",
+    addRandomSuffix: false,
+  });
+  return blob.url;
 }

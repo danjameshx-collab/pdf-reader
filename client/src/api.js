@@ -1,3 +1,5 @@
+import { upload } from "@vercel/blob/client";
+
 const BASE = "/api";
 
 async function json(res) {
@@ -22,26 +24,19 @@ export const api = {
     }).then(json),
   ttsUrl: (id, page, voice, rate) =>
     `${BASE}/books/${id}/tts/${page}?voice=${encodeURIComponent(voice)}&rate=${rate}`,
-  uploadBook: (file, title, onProgress) =>
-    new Promise((resolve, reject) => {
-      const form = new FormData();
-      form.append("file", file);
-      if (title) form.append("title", title);
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${BASE}/books`);
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
-      };
-      xhr.onload = () => {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-          else reject(new Error(data.error || "Upload failed"));
-        } catch {
-          reject(new Error("Upload failed"));
-        }
-      };
-      xhr.onerror = () => reject(new Error("Upload failed"));
-      xhr.send(form);
-    }),
+  // Uploads go straight from the browser to Blob storage (bypassing the API's
+  // request-size limit), then a small JSON call tells the server to extract
+  // the text and register the book.
+  uploadBook: async (file, title, onProgress) => {
+    const blob = await upload(file.name, file, {
+      access: "public",
+      handleUploadUrl: `${BASE}/blob-upload`,
+      onUploadProgress: (p) => onProgress?.(p.percentage / 100),
+    });
+    return fetch(`${BASE}/books`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blobUrl: blob.url, title }),
+    }).then(json);
+  },
 };
