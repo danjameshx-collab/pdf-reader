@@ -1,17 +1,21 @@
-import { put, head, del, BlobNotFoundError } from "@vercel/blob";
+import { put, get, del, BlobNotFoundError } from "@vercel/blob";
 
 // Pass the token explicitly on every call — @vercel/blob otherwise tries
 // Vercel's OIDC auth first, which hangs indefinitely on this project.
 const token = process.env.BLOB_READ_WRITE_TOKEN;
 
+// This Blob store only allows private access, so reads go through the
+// authenticated `get()` call (a stream) rather than a public blob URL.
+const ACCESS = "private";
+
 const BOOKS_KEY = "books.json";
 
 async function getJson(pathname) {
   try {
-    const info = await head(pathname, { token });
-    const res = await fetch(info.url, { cache: "no-store" });
-    if (!res.ok) return null;
-    return await res.json();
+    const result = await get(pathname, { access: ACCESS, token });
+    if (!result) return null;
+    const text = await new Response(result.stream).text();
+    return JSON.parse(text);
   } catch (e) {
     if (e instanceof BlobNotFoundError) return null;
     throw e;
@@ -20,7 +24,7 @@ async function getJson(pathname) {
 
 async function putJson(pathname, data) {
   await put(pathname, JSON.stringify(data), {
-    access: "public",
+    access: ACCESS,
     contentType: "application/json",
     addRandomSuffix: false,
     allowOverwrite: true,

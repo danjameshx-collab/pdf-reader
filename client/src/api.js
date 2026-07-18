@@ -29,7 +29,7 @@ export const api = {
   // the text and register the book.
   uploadBook: async (file, title, onProgress) => {
     const blob = await upload(file.name, file, {
-      access: "public",
+      access: "private",
       handleUploadUrl: `${BASE}/blob-upload`,
       onUploadProgress: (p) => onProgress?.(p.percentage / 100),
     });

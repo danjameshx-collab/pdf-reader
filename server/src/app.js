@@ -2,10 +2,10 @@ import express from "express";
 import cors from "cors";
 import { nanoid } from "nanoid";
 import { handleUpload } from "@vercel/blob/client";
-import { del } from "@vercel/blob";
+import { del, get } from "@vercel/blob";
 
 import { extractPages } from "./pdfText.js";
-import { synthesizePage, VOICES } from "./tts.js";
+import { ensurePageAudio, readPageAudio, VOICES } from "./tts.js";
 import { listBooks, getBook, putBook, updateBook, deleteBook, readPages, writePages } from "./store.js";
 
 const app = express();
@@ -69,9 +69,9 @@ app.post(
     const { blobUrl, title: rawTitle } = req.body;
     if (!blobUrl) return res.status(400).json({ error: "blobUrl is required" });
 
-    const pdfRes = await fetch(blobUrl);
-    if (!pdfRes.ok) throw new Error("could not fetch uploaded PDF");
-    const buffer = Buffer.from(await pdfRes.arrayBuffer());
+    const pdfBlob = await get(blobUrl, { access: "private", token: blobToken });
+    if (!pdfBlob) throw new Error("could not fetch uploaded PDF");
+    const buffer = Buffer.from(await new Response(pdfBlob.stream).arrayBuffer());
     const pages = await extractPages(buffer);
 
     const id = nanoid(12);
@@ -147,8 +147,30 @@ app.get(
     }
     const voice = req.query.voice || book.voice || VOICES[0].id;
     const rate = req.query.rate || book.rate || 1;
-    const url = await synthesizePage(book.id, pageIndex, pages[pageIndex], voice, rate);
-    res.redirect(302, url);
+    const pathname = await ensurePageAudio(book.id, pageIndex, pages[pageIndex], voice, rate);
+    const audio = await readPageAudio(pathname);
+
+    res.set("Accept-Ranges", "bytes");
+    res.set("Content-Type", "audio/mpeg");
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+
+    const range = req.headers.range;
+    const rangeMatch = range && /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (rangeMatch) {
+      const start = rangeMatch[1] ? parseInt(rangeMatch[1], 10) : 0;
+      const end = rangeMatch[2] ? Math.min(parseInt(rangeMatch[2], 10), audio.length - 1) : audio.length - 1;
+      if (start > end || start >= audio.length) {
+        res.status(416).set("Content-Range", `bytes */${audio.length}`).end();
+        return;
+      }
+      res.status(206);
+      res.set("Content-Range", `bytes ${start}-${end}/${audio.length}`);
+      res.set("Content-Length", String(end - start + 1));
+      res.end(audio.subarray(start, end + 1));
+    } else {
+      res.set("Content-Length", String(audio.length));
+      res.end(audio);
+    }
   })
 );
 

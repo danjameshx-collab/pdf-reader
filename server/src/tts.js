@@ -1,10 +1,14 @@
 import crypto from "node:crypto";
-import { head, put, BlobNotFoundError } from "@vercel/blob";
+import { head, put, get, BlobNotFoundError } from "@vercel/blob";
 import { EdgeTTS } from "edge-tts-universal";
 
 // Pass the token explicitly on every call — @vercel/blob otherwise tries
 // Vercel's OIDC auth first, which hangs indefinitely on this project.
 const token = process.env.BLOB_READ_WRITE_TOKEN;
+
+// This Blob store only allows private access, so audio is streamed back
+// through our own endpoint rather than served directly from a public URL.
+const ACCESS = "private";
 
 // Curated set of natural-sounding Edge neural voices worth surfacing in the UI.
 export const VOICES = [
@@ -33,14 +37,15 @@ function rateToProsody(rate) {
 }
 
 /**
- * Synthesize (or reuse cached) audio for a page and return its public URL.
+ * Ensures a page's audio is cached in Blob (synthesizing it if necessary)
+ * and returns its pathname.
  */
-export async function synthesizePage(bookId, pageIndex, text, voice, rate) {
+export async function ensurePageAudio(bookId, pageIndex, text, voice, rate) {
   const pathname = cachePathname(bookId, pageIndex, voice, rate);
 
   try {
-    const info = await head(pathname, { token });
-    return info.url;
+    await head(pathname, { token });
+    return pathname;
   } catch (e) {
     if (!(e instanceof BlobNotFoundError)) throw e;
   }
@@ -53,11 +58,18 @@ export async function synthesizePage(bookId, pageIndex, text, voice, rate) {
   const result = await tts.synthesize();
   const audioBuffer = Buffer.from(await result.audio.arrayBuffer());
 
-  const blob = await put(pathname, audioBuffer, {
-    access: "public",
+  await put(pathname, audioBuffer, {
+    access: ACCESS,
     contentType: "audio/mpeg",
     addRandomSuffix: false,
     token,
   });
-  return blob.url;
+  return pathname;
+}
+
+/** Reads cached audio bytes back out of Blob for streaming to the browser. */
+export async function readPageAudio(pathname) {
+  const result = await get(pathname, { access: ACCESS, token });
+  if (!result) throw new BlobNotFoundError();
+  return Buffer.from(await new Response(result.stream).arrayBuffer());
 }
