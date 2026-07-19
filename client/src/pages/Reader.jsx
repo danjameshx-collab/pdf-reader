@@ -8,8 +8,11 @@ import {
   SkipForward,
   Loader2,
   ChevronDown,
+  Download,
+  Check,
 } from "lucide-react";
 import { api } from "../api.js";
+import { getPlayableAudioUrl, cacheAudio, countCached, offlineSupported } from "../offlineCache.js";
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -38,8 +41,14 @@ export default function Reader() {
   const [jumpValue, setJumpValue] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState("");
+  const [cachedCount, setCachedCount] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({ done: 0, total: 0 });
 
   const shouldAutoplayRef = useRef(false);
+  const objectUrlRef = useRef(null);
+  const loadTokenRef = useRef(0);
+  const cancelDownloadRef = useRef(false);
 
   // Load book + voices once.
   useEffect(() => {
@@ -72,27 +81,99 @@ export default function Reader() {
     return () => clearTimeout(t);
   }, [id, book, page, voice, rate]);
 
-  // (Re)load audio source when page/voice/rate changes.
+  // (Re)load audio source when page/voice/rate changes. Goes through the
+  // offline cache: served instantly from Cache Storage if already
+  // downloaded, otherwise fetched and cached for next time.
   useEffect(() => {
     if (!book || voice === null) return;
     const audio = audioRef.current;
     if (!audio) return;
+    const token = ++loadTokenRef.current;
     setAudioLoading(true);
     setProgress({ current: 0, duration: 0 });
-    audio.src = api.ttsUrl(id, page, voice, rate);
-    audio.load();
-    if (shouldAutoplayRef.current) {
-      audio.play().catch(() => {});
-    }
+    const url = api.ttsUrl(id, page, voice, rate);
+    getPlayableAudioUrl(url)
+      .then((objectUrl) => {
+        if (token !== loadTokenRef.current) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = objectUrl;
+        audio.src = objectUrl;
+        audio.load();
+        if (shouldAutoplayRef.current) {
+          audio.play().catch(() => {});
+        }
+      })
+      .catch((e) => {
+        if (token === loadTokenRef.current) {
+          setAudioLoading(false);
+          setError(e.message);
+        }
+      });
   }, [id, page, voice, rate, book]);
 
-  // Prefetch the next page's audio in the background so page turns feel instant.
+  // Revoke the last object URL on unmount.
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    };
+  }, []);
+
+  // Prefetch the next page's audio in the background so page turns feel
+  // instant, and so it's already cached for offline use.
   useEffect(() => {
     if (!book || voice === null) return;
     if (page + 1 >= book.numPages) return;
     const url = api.ttsUrl(id, page + 1, voice, rate);
-    fetch(url).catch(() => {});
+    cacheAudio(url).catch(() => {});
   }, [id, page, voice, rate, book]);
+
+  // Track how many pages (for the current voice/rate) are already cached
+  // for offline playback.
+  const refreshCachedCount = useCallback(() => {
+    if (!book || voice === null || !offlineSupported) return;
+    const urls = Array.from({ length: book.numPages }, (_, p) => api.ttsUrl(id, p, voice, rate));
+    countCached(urls).then(setCachedCount);
+  }, [id, book, voice, rate]);
+
+  useEffect(() => {
+    refreshCachedCount();
+  }, [refreshCachedCount, page]);
+
+  const downloadBook = useCallback(async () => {
+    if (!book || voice === null || downloading) return;
+    setDownloading(true);
+    cancelDownloadRef.current = false;
+    const total = book.numPages;
+    let done = 0;
+    setDownloadProgress({ done, total });
+    const CONCURRENCY = 3;
+    const pages = Array.from({ length: total }, (_, p) => p);
+    let next = 0;
+    async function worker() {
+      while (next < pages.length) {
+        if (cancelDownloadRef.current) return;
+        const p = pages[next++];
+        try {
+          await cacheAudio(api.ttsUrl(id, p, voice, rate));
+        } catch {
+          // skip pages that fail (e.g. no extractable text) and keep going
+        }
+        done += 1;
+        setDownloadProgress({ done, total });
+      }
+    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    setDownloading(false);
+    refreshCachedCount();
+  }, [id, book, voice, rate, downloading, refreshCachedCount]);
+
+  function cancelDownload() {
+    cancelDownloadRef.current = true;
+    setDownloading(false);
+  }
 
   const goToPage = useCallback(
     (n, autoplay = isPlaying) => {
@@ -208,6 +289,35 @@ export default function Reader() {
               Go
             </button>
           </form>
+          {offlineSupported && (
+            <button
+              onClick={downloading ? cancelDownload : downloadBook}
+              disabled={!downloading && cachedCount >= book.numPages}
+              title={
+                cachedCount >= book.numPages
+                  ? "All pages downloaded for offline listening"
+                  : `Download this voice/speed for offline listening (${cachedCount}/${book.numPages} cached)`
+              }
+              className="shrink-0 flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 disabled:opacity-50"
+            >
+              {downloading ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  {downloadProgress.done}/{downloadProgress.total}
+                </>
+              ) : cachedCount >= book.numPages ? (
+                <>
+                  <Check size={14} className="text-emerald-400" />
+                  Offline
+                </>
+              ) : (
+                <>
+                  <Download size={14} />
+                  {cachedCount > 0 ? `${cachedCount}/${book.numPages}` : "Download"}
+                </>
+              )}
+            </button>
+          )}
         </div>
         <div className="h-0.5 bg-white/5">
           <div className="h-full bg-violet-500 transition-all" style={{ width: `${pageProgressPct}%` }} />
