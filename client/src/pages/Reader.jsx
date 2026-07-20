@@ -160,7 +160,10 @@ export default function Reader() {
         if (cancelDownloadRef.current) return;
         const p = pages[next++];
         try {
-          await cacheAudio(api.ttsUrl(id, p, voice, rate));
+          // Page text goes through the service worker's own cache (it's a
+          // plain JSON GET), so this also makes the page readable offline,
+          // not just listenable — not just the audio.
+          await Promise.all([api.getPage(id, p), cacheAudio(api.ttsUrl(id, p, voice, rate))]);
         } catch (e) {
           // A single bad page (synthesis timeout, transient error) shouldn't
           // block the rest of the book — note it and keep going. The button
