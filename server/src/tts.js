@@ -55,7 +55,15 @@ export async function ensurePageAudio(bookId, pageIndex, text, voice, rate) {
   }
 
   const tts = new EdgeTTS(text, voice, { rate: rateToProsody(rate) });
-  const result = await tts.synthesize();
+  // The underlying websocket can stall without ever erroring (seen on some
+  // pages), which would otherwise hang the request until Vercel's hard
+  // maxDuration cutoff. Fail fast instead so callers can retry.
+  const result = await Promise.race([
+    tts.synthesize(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("TTS synthesis timed out")), 45_000)
+    ),
+  ]);
   const audioBuffer = Buffer.from(await result.audio.arrayBuffer());
 
   await put(pathname, audioBuffer, {

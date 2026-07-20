@@ -43,7 +43,8 @@ export default function Reader() {
   const [error, setError] = useState("");
   const [cachedCount, setCachedCount] = useState(0);
   const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState({ done: 0, total: 0 });
+  const [downloadProgress, setDownloadProgress] = useState({ done: 0, total: 0, failed: 0 });
+  const [downloadNotice, setDownloadNotice] = useState("");
 
   const shouldAutoplayRef = useRef(false);
   const objectUrlRef = useRef(null);
@@ -145,10 +146,12 @@ export default function Reader() {
   const downloadBook = useCallback(async () => {
     if (!book || voice === null || downloading) return;
     setDownloading(true);
+    setDownloadNotice("");
     cancelDownloadRef.current = false;
     const total = book.numPages;
     let done = 0;
-    setDownloadProgress({ done, total });
+    let failed = 0;
+    setDownloadProgress({ done, total, failed });
     const CONCURRENCY = 3;
     const pages = Array.from({ length: total }, (_, p) => p);
     let next = 0;
@@ -158,15 +161,24 @@ export default function Reader() {
         const p = pages[next++];
         try {
           await cacheAudio(api.ttsUrl(id, p, voice, rate));
-        } catch {
-          // skip pages that fail (e.g. no extractable text) and keep going
+        } catch (e) {
+          // A single bad page (synthesis timeout, transient error) shouldn't
+          // block the rest of the book — note it and keep going. The button
+          // stays clickable afterwards so failed pages can be retried.
+          failed += 1;
+          console.warn(`Failed to cache page ${p + 1}:`, e.message);
         }
         done += 1;
-        setDownloadProgress({ done, total });
+        setDownloadProgress({ done, total, failed });
       }
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     setDownloading(false);
+    setDownloadNotice(
+      failed > 0
+        ? `${failed} page${failed === 1 ? "" : "s"} failed to download — click Download to retry them.`
+        : ""
+    );
     refreshCachedCount();
   }, [id, book, voice, rate, downloading, refreshCachedCount]);
 
@@ -322,6 +334,9 @@ export default function Reader() {
         <div className="h-0.5 bg-white/5">
           <div className="h-full bg-violet-500 transition-all" style={{ width: `${pageProgressPct}%` }} />
         </div>
+        {downloadNotice && (
+          <div className="max-w-3xl mx-auto px-6 py-1.5 text-xs text-amber-300">{downloadNotice}</div>
+        )}
       </header>
 
       <main className="flex-1 max-w-3xl w-full mx-auto px-6 py-10 pb-40">
