@@ -7,6 +7,7 @@ import { useOfflineDownload } from "../useOfflineDownload.js";
 import BottomSheet from "../components/BottomSheet.jsx";
 import OfflineButton from "../components/OfflineButton.jsx";
 import OfflineBanner from "../components/OfflineBanner.jsx";
+import DownloadStatusModal from "../components/DownloadStatusModal.jsx";
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -34,6 +35,7 @@ export default function Reader() {
   const [progress, setProgress] = useState({ current: 0, duration: 0 });
   const [jumpValue, setJumpValue] = useState("");
   const [showSheet, setShowSheet] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [error, setError] = useState("");
 
   const shouldAutoplayRef = useRef(false);
@@ -231,9 +233,14 @@ export default function Reader() {
             </p>
           </div>
           {offline.supported && (
-            <div className="hidden sm:block">
-              <OfflineButton state={offline} onDownload={offline.download} onCancel={offline.cancel} label />
-            </div>
+            <>
+              <div className="hidden sm:block">
+                <OfflineButton state={offline} onOpen={() => setShowDownloadModal(true)} label />
+              </div>
+              <div className="sm:hidden">
+                <OfflineButton state={offline} onOpen={() => setShowDownloadModal(true)} size={32} />
+              </div>
+            </>
           )}
           <button
             onClick={() => setShowSheet(true)}
@@ -388,23 +395,45 @@ export default function Reader() {
         </div>
 
         {offline.supported && (
-          <div className="pt-1 border-t border-white/10">
-            <div className="flex items-center justify-between pt-4">
-              <div>
-                <p className="text-sm text-white">Offline listening</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {offline.background
-                    ? "Downloading in the background — you can close the app and it'll keep going."
-                    : offline.isComplete
-                    ? "Whole book downloaded for this voice & speed."
-                    : `${offline.cachedCount} of ${book.numPages} pages downloaded for this voice & speed.`}
-                </p>
-              </div>
-              <OfflineButton state={offline} onDownload={offline.download} onCancel={offline.cancel} size={38} />
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setShowSheet(false);
+              setShowDownloadModal(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                setShowSheet(false);
+                setShowDownloadModal(true);
+              }
+            }}
+            className="w-full flex items-center justify-between pt-4 border-t border-white/10 cursor-pointer"
+          >
+            <div>
+              <p className="text-sm text-white">Offline listening</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {offline.isComplete
+                  ? "Downloaded — tap for details"
+                  : `${offline.cachedCount} of ${book.numPages} pages downloaded — tap for details`}
+              </p>
             </div>
+            <OfflineButton state={offline} onOpen={() => setShowDownloadModal(true)} size={38} />
           </div>
         )}
       </BottomSheet>
+
+      {offline.supported && (
+        <DownloadStatusModal
+          open={showDownloadModal}
+          onClose={() => setShowDownloadModal(false)}
+          title={book.title}
+          numPages={book.numPages}
+          state={offline}
+          onDownload={offline.download}
+          onCancel={offline.cancel}
+        />
+      )}
     </div>
   );
 }

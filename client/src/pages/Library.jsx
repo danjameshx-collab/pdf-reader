@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { useOfflineDownload } from "../useOfflineDownload.js";
 import OfflineButton from "../components/OfflineButton.jsx";
 import OfflineBanner from "../components/OfflineBanner.jsx";
+import DownloadStatusModal from "../components/DownloadStatusModal.jsx";
 
 function formatDate(ts) {
   return new Date(ts).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -18,6 +19,7 @@ function BookCard({ book, onOpen, onDelete }) {
     rate: book.rate,
     title: book.title,
   });
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const pct = book.numPages ? Math.round(((book.lastPage + 1) / book.numPages) * 100) : 0;
 
   return (
@@ -31,7 +33,7 @@ function BookCard({ book, onOpen, onDelete }) {
         </div>
         <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           {offline.supported && (
-            <OfflineButton state={offline} onDownload={offline.download} onCancel={offline.cancel} size={30} />
+            <OfflineButton state={offline} onOpen={() => setShowDownloadModal(true)} size={30} />
           )}
           <button
             onClick={onDelete}
@@ -55,6 +57,18 @@ function BookCard({ book, onOpen, onDelete }) {
           {book.lastPage > 0 ? `Page ${book.lastPage + 1} of ${book.numPages} · ${pct}%` : "Not started"}
         </p>
       </div>
+
+      {offline.supported && (
+        <DownloadStatusModal
+          open={showDownloadModal}
+          onClose={() => setShowDownloadModal(false)}
+          title={book.title}
+          numPages={book.numPages}
+          state={offline}
+          onDownload={offline.download}
+          onCancel={offline.cancel}
+        />
+      )}
     </div>
   );
 }

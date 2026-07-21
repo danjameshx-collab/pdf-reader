@@ -1,9 +1,13 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 // A mobile-style sheet that slides up from the bottom on small screens and
 // behaves like a centered modal on larger ones. Closes on backdrop click or
-// Escape.
+// Escape. Rendered via a portal into document.body — several callers (e.g.
+// library cards) render this inside their own onClick-handling container,
+// and without a portal, clicks inside the sheet would bubble up through
+// that ancestor's DOM tree and trigger its handler too.
 export default function BottomSheet({ open, onClose, title, children }) {
   useEffect(() => {
     if (!open) return;
@@ -16,8 +20,8 @@ export default function BottomSheet({ open, onClose, title, children }) {
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center">
+  return createPortal(
+    <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center" onClick={(e) => e.stopPropagation()}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div
         className="relative w-full sm:w-[26rem] sm:rounded-2xl rounded-t-2xl border border-white/10 bg-[#14161d] shadow-2xl max-h-[85vh] overflow-y-auto"
@@ -38,6 +42,7 @@ export default function BottomSheet({ open, onClose, title, children }) {
         </div>
         <div className="px-5 pb-4 pt-2 space-y-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

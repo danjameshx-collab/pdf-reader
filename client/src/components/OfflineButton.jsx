@@ -1,17 +1,18 @@
-import { Download, Check, X } from "lucide-react";
+import { Download, Check, Loader2 } from "lucide-react";
 
-// Circular icon button used on library cards; also the basis for the
-// labelled pill variant used in the reader header. Shows idle / in-progress
-// (as a ring) / complete states at a glance — tooltips alone aren't
-// discoverable on touch, so callers needing clarity on mobile should use
-// `label`.
-export default function OfflineButton({ state, onDownload, onCancel, size = 34, label = false, className = "" }) {
+// Status indicator — idle / in-progress (ring) / complete (check) — used on
+// library cards and in the reader header. Purely informational at a glance;
+// tapping it (any state) opens DownloadStatusModal, which holds the actual
+// start/cancel controls.
+export default function OfflineButton({ state, onOpen, size = 34, label = false, className = "" }) {
   const { downloading, background, progress, isComplete, cachedCount } = state;
-  // A background download's fine-grained progress lives in the OS/browser
-  // notification, not here — so with no per-page count to show, spin
-  // indeterminately instead of drawing a (fake) 0% ring.
   const indeterminate = background || !progress.total;
   const pct = !indeterminate ? Math.round((progress.done / progress.total) * 100) : 0;
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    onOpen();
+  };
 
   if (downloading) {
     const ring = (
@@ -27,26 +28,23 @@ export default function OfflineButton({ state, onDownload, onCancel, size = 34, 
               }
         }
       >
-        <span className={`absolute inset-[3px] rounded-full bg-[#14161d] grid place-items-center ${indeterminate ? "animate-[spin_1s_linear_infinite_reverse]" : ""}`}>
-          <X size={size * 0.4} />
+        <span
+          className={`absolute inset-[3px] rounded-full bg-[#14161d] grid place-items-center ${
+            indeterminate ? "animate-[spin_1s_linear_infinite_reverse]" : ""
+          }`}
+        >
+          <Loader2 size={size * 0.4} className={indeterminate ? "" : "animate-spin"} />
         </span>
       </span>
     );
     return (
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onCancel();
-        }}
-        title={
-          background
-            ? "Downloading in the background — tap to cancel"
-            : `Downloading… ${progress.done}/${progress.total} (tap to cancel)`
-        }
+        onClick={handleClick}
+        title={background ? "Downloading in the background" : `Downloading… ${progress.done}/${progress.total}`}
         className={
           label
-            ? `flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300 ${className}`
-            : `text-gray-300 hover:text-white ${className}`
+            ? `flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 ${className}`
+            : `hover:opacity-80 ${className}`
         }
       >
         {ring}
@@ -64,15 +62,19 @@ export default function OfflineButton({ state, onDownload, onCancel, size = 34, 
         <Check size={size * 0.5} />
       </span>
     );
-    if (!label) return <div title="Downloaded for offline listening" className={className}>{badge}</div>;
     return (
-      <div
+      <button
+        onClick={handleClick}
         title="Downloaded for offline listening"
-        className={`flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 ${className}`}
+        className={
+          label
+            ? `flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/20 text-xs text-emerald-400 ${className}`
+            : `hover:opacity-80 ${className}`
+        }
       >
         {badge}
-        <span>Offline</span>
-      </div>
+        {label && <span>Offline</span>}
+      </button>
     );
   }
 
@@ -87,15 +89,12 @@ export default function OfflineButton({ state, onDownload, onCancel, size = 34, 
 
   return (
     <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onDownload();
-      }}
+      onClick={handleClick}
       title={cachedCount > 0 ? `Resume download (${cachedCount} pages cached)` : "Download for offline listening"}
       className={
         label
           ? `flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white ${className}`
-          : `hover:bg-white/10 border border-white/10 rounded-full text-gray-300 hover:text-white ${className}`
+          : `hover:opacity-80 ${className}`
       }
     >
       {icon}
