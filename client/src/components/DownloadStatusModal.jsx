@@ -1,12 +1,13 @@
 import { Check, Download, Loader2 } from "lucide-react";
 import BottomSheet from "./BottomSheet.jsx";
+import { downloadPct, formatBytes } from "../downloadProgress.js";
 
 // The single place offline-download status and controls live — opened by
 // tapping the OfflineButton indicator anywhere it appears (library card or
 // reader header), in any state (idle, in progress, or finished).
 export default function DownloadStatusModal({ open, onClose, title, numPages, state, onDownload, onCancel }) {
   const { downloading, background, progress, isComplete, cachedCount, notice } = state;
-  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+  const pct = downloadPct(progress, background);
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Offline listening">
@@ -25,13 +26,28 @@ export default function DownloadStatusModal({ open, onClose, title, numPages, st
       ) : downloading ? (
         <div className="space-y-3">
           {background ? (
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-              <Loader2 size={20} className="animate-spin text-violet-400 shrink-0" />
-              <div>
-                <p className="text-sm text-white">Downloading in the background</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  You can close the app — Chrome will keep going and show its own progress notification.
-                </p>
+            <div>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <Loader2 size={20} className="animate-spin text-violet-400 shrink-0" />
+                <div>
+                  <p className="text-sm text-white">Downloading in the background</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    You can close the app — Chrome will keep going and show its own progress notification too.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-sm text-white mb-1.5">
+                  <span>{formatBytes(progress.downloadedBytes)} downloaded</span>
+                  <span className="text-gray-400">{pct === null ? "…" : `~${pct}%`}</span>
+                </div>
+                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className={`h-full bg-violet-400 transition-all ${pct === null ? "w-1/3 animate-pulse" : ""}`}
+                    style={pct === null ? undefined : { width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Estimated — exact size varies page to page.</p>
               </div>
             </div>
           ) : (

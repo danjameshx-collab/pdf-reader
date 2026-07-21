@@ -8,6 +8,8 @@ import {
   backgroundFetchId,
 } from "./backgroundDownload.js";
 
+const emptyProgress = { done: 0, total: 0, failed: 0, downloadedBytes: 0, totalBytes: 0 };
+
 // Shared "download this book for offline listening" logic — used by both
 // the library card (download without opening the book) and the reader's
 // offline sheet. Prefers the Background Fetch API (survives closing the
@@ -17,11 +19,12 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
   const [cachedCount, setCachedCount] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [background, setBackground] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0, failed: 0 });
+  const [progress, setProgress] = useState(emptyProgress);
   const [notice, setNotice] = useState("");
   const cancelRef = useRef(false);
   const bgRegRef = useRef(null);
   const bgSupportedRef = useRef(false);
+  const bgProgressCleanupRef = useRef(null);
 
   const refresh = useCallback(() => {
     if (!id || !numPages || !voice || !offlineSupported) return;
@@ -33,6 +36,21 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
     refresh();
   }, [refresh]);
 
+  // Background Fetch reports progress in bytes downloaded via its own
+  // `downloaded`/`downloadTotal` counters and a `progress` event — there's
+  // no per-page count exposed, so this is the only progress signal we get
+  // for background downloads.
+  const trackBackgroundProgress = useCallback((bgReg) => {
+    bgProgressCleanupRef.current?.();
+    bgRegRef.current = bgReg;
+    const update = () => {
+      setProgress((p) => ({ ...p, downloadedBytes: bgReg.downloaded, totalBytes: bgReg.downloadTotal }));
+    };
+    update();
+    bgReg.addEventListener("progress", update);
+    bgProgressCleanupRef.current = () => bgReg.removeEventListener("progress", update);
+  }, []);
+
   // Detect an already-running background download — e.g. the app was
   // closed and reopened while Chrome kept downloading in the background.
   useEffect(() => {
@@ -43,7 +61,7 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
       if (!supported || cancelled) return;
       getActiveBackgroundFetch(id, voice, rate).then((bgReg) => {
         if (cancelled || !bgReg) return;
-        bgRegRef.current = bgReg;
+        trackBackgroundProgress(bgReg);
         setDownloading(true);
         setBackground(true);
       });
@@ -51,7 +69,7 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
     return () => {
       cancelled = true;
     };
-  }, [id, numPages, voice, rate]);
+  }, [id, numPages, voice, rate, trackBackgroundProgress]);
 
   // Pick up completion messages from the service worker — fires even if
   // this component wasn't mounted when the download actually finished.
@@ -60,9 +78,12 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
     const expectedId = backgroundFetchId(id, voice, rate);
     function onMessage(event) {
       if (event.data?.type !== "background-download-done" || event.data.id !== expectedId) return;
+      bgProgressCleanupRef.current?.();
+      bgProgressCleanupRef.current = null;
+      bgRegRef.current = null;
       setDownloading(false);
       setBackground(false);
-      bgRegRef.current = null;
+      setProgress(emptyProgress);
       setNotice(
         event.data.failed > 0
           ? `${event.data.failed} page${event.data.failed === 1 ? "" : "s"} failed — tap Download to retry them.`
@@ -74,11 +95,13 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
   }, [id, voice, rate, refresh]);
 
+  useEffect(() => () => bgProgressCleanupRef.current?.(), []);
+
   const downloadForeground = useCallback(async () => {
     cancelRef.current = false;
     let done = 0;
     let failed = 0;
-    setProgress({ done, total: numPages, failed });
+    setProgress({ ...emptyProgress, total: numPages });
     const CONCURRENCY = 3;
     const pages = Array.from({ length: numPages }, (_, p) => p);
     let next = 0;
@@ -96,7 +119,7 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
           console.warn(`Failed to cache page ${p + 1}:`, e.message);
         }
         done += 1;
-        setProgress({ done, total: numPages, failed });
+        setProgress((prev) => ({ ...prev, done, failed }));
       }
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
@@ -120,14 +143,16 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
           requests.push(api.ttsUrl(id, p, voice, rate));
           requests.push(api.pageUrl(id, p));
         }
-        bgRegRef.current = await startBackgroundDownload({
+        const bgReg = await startBackgroundDownload({
           bookId: id,
           title: title || "book",
           voice,
           rate,
           requests,
+          numPages,
         });
-        return; // progress/completion arrives via the SW message listener above
+        trackBackgroundProgress(bgReg);
+        return; // completion arrives via the SW message listener above
       } catch (e) {
         // Quota errors, a stuck duplicate registration, etc. — fall back to
         // the in-page loop so the click still does something.
@@ -137,16 +162,19 @@ export function useOfflineDownload({ id, numPages, voice, rate, title }) {
     }
 
     await downloadForeground();
-  }, [id, numPages, voice, rate, title, downloading, downloadForeground]);
+  }, [id, numPages, voice, rate, title, downloading, downloadForeground, trackBackgroundProgress]);
 
   const cancel = useCallback(() => {
     if (background && bgRegRef.current) {
       bgRegRef.current.abort().catch(() => {});
+      bgProgressCleanupRef.current?.();
+      bgProgressCleanupRef.current = null;
       bgRegRef.current = null;
       setBackground(false);
     } else {
       cancelRef.current = true;
     }
+    setProgress(emptyProgress);
     setDownloading(false);
   }, [background]);
 

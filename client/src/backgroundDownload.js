@@ -26,9 +26,16 @@ export async function getActiveBackgroundFetch(bookId, voice, rate) {
   return bgReg && !bgReg.result ? bgReg : null; // `result` is set once it's finished
 }
 
-export async function startBackgroundDownload({ bookId, title, voice, rate, requests }) {
+// There's no way to know real audio sizes upfront (they vary a lot with how
+// much text is on a page), so this is a rough per-page estimate used only
+// to give the browser — and our own progress bar — *some* denominator to
+// show a percentage against, rather than a totally indeterminate spinner.
+const ESTIMATED_BYTES_PER_PAGE = 150_000;
+
+export async function startBackgroundDownload({ bookId, title, voice, rate, requests, numPages }) {
   const reg = await navigator.serviceWorker.ready;
   return reg.backgroundFetch.fetch(backgroundFetchId(bookId, voice, rate), requests, {
     title: `Downloading "${title}"`,
+    downloadTotal: numPages * ESTIMATED_BYTES_PER_PAGE,
   });
 }

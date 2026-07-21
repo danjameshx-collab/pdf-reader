@@ -1,4 +1,5 @@
 import { Download, Check, Loader2 } from "lucide-react";
+import { downloadPct } from "../downloadProgress.js";
 
 // Status indicator — idle / in-progress (ring) / complete (check) — used on
 // library cards and in the reader header. Purely informational at a glance;
@@ -6,8 +7,8 @@ import { Download, Check, Loader2 } from "lucide-react";
 // start/cancel controls.
 export default function OfflineButton({ state, onOpen, size = 34, label = false, className = "" }) {
   const { downloading, background, progress, isComplete, cachedCount } = state;
-  const indeterminate = background || !progress.total;
-  const pct = !indeterminate ? Math.round((progress.done / progress.total) * 100) : 0;
+  const pct = downloadPct(progress, background);
+  const indeterminate = pct === null;
 
   const handleClick = (e) => {
     e.stopPropagation();
@@ -40,7 +41,13 @@ export default function OfflineButton({ state, onOpen, size = 34, label = false,
     return (
       <button
         onClick={handleClick}
-        title={background ? "Downloading in the background" : `Downloading… ${progress.done}/${progress.total}`}
+        title={
+          background
+            ? indeterminate
+              ? "Downloading in the background"
+              : `Downloading in the background… ${pct}%`
+            : `Downloading… ${progress.done}/${progress.total}`
+        }
         className={
           label
             ? `flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 ${className}`
