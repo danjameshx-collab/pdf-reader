@@ -40,7 +40,7 @@ export default function Reader() {
   const objectUrlRef = useRef(null);
   const loadTokenRef = useRef(0);
 
-  const offline = useOfflineDownload({ id, numPages: book?.numPages, voice, rate });
+  const offline = useOfflineDownload({ id, numPages: book?.numPages, voice, rate, title: book?.title });
 
   // Load book + voices once.
   useEffect(() => {
@@ -393,7 +393,9 @@ export default function Reader() {
               <div>
                 <p className="text-sm text-white">Offline listening</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {offline.isComplete
+                  {offline.background
+                    ? "Downloading in the background — you can close the app and it'll keep going."
+                    : offline.isComplete
                     ? "Whole book downloaded for this voice & speed."
                     : `${offline.cachedCount} of ${book.numPages} pages downloaded for this voice & speed.`}
                 </p>

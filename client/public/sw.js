@@ -4,6 +4,10 @@
 // worker explicitly stays out of the tts route's way.
 const CACHE_VERSION = "v1";
 const RUNTIME_CACHE = `pdf-listener-runtime-${CACHE_VERSION}`;
+// Must match offlineCache.js's CACHE_NAME — this worker can't import that
+// module (it's a classic, non-module script), so the string is duplicated
+// deliberately. Keep the two in sync if either changes.
+const AUDIO_CACHE = "pdf-listener-audio-v1";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -67,4 +71,46 @@ self.addEventListener("fetch", (event) => {
   if (url.origin === self.location.origin) {
     event.respondWith(cacheFirst(req));
   }
+});
+
+// A Background Fetch (started from useOfflineDownload.js via
+// backgroundDownload.js) downloads pages itself, independent of any open
+// tab. Once it's done, move the results into the same caches the app
+// normally reads from, then tell any open page so its UI can update.
+async function storeBackgroundFetchResults(registration) {
+  const records = await registration.matchAll();
+  const audioCache = await caches.open(AUDIO_CACHE);
+  const runtimeCache = await caches.open(RUNTIME_CACHE);
+  let failed = 0;
+  for (const record of records) {
+    const response = await record.responseReady.catch(() => null);
+    if (!response || !response.ok) {
+      failed += 1;
+      continue;
+    }
+    const url = new URL(record.request.url);
+    const cache = url.pathname.includes("/tts/") ? audioCache : runtimeCache;
+    await cache.put(record.request, response);
+  }
+  return failed;
+}
+
+async function handleBackgroundFetchDone(registration, minFailed = 0) {
+  const failed = Math.max(await storeBackgroundFetchResults(registration), minFailed);
+  const clientsList = await self.clients.matchAll();
+  for (const client of clientsList) {
+    client.postMessage({ type: "background-download-done", id: registration.id, failed });
+  }
+}
+
+self.addEventListener("backgroundfetchsuccess", (event) => {
+  event.waitUntil(handleBackgroundFetchDone(event.registration));
+});
+
+self.addEventListener("backgroundfetchfail", (event) => {
+  event.waitUntil(handleBackgroundFetchDone(event.registration, 1));
+});
+
+self.addEventListener("backgroundfetchclick", (event) => {
+  event.waitUntil(self.clients.openWindow("/"));
 });

@@ -24,6 +24,7 @@ export const api = {
     }).then(json),
   ttsUrl: (id, page, voice, rate) =>
     `${BASE}/books/${id}/tts/${page}?voice=${encodeURIComponent(voice)}&rate=${rate}`,
+  pageUrl: (id, page) => `${BASE}/books/${id}/pages/${page}`,
   // Uploads go straight from the browser to Blob storage (bypassing the API's
   // request-size limit), then a small JSON call tells the server to extract
   // the text and register the book.

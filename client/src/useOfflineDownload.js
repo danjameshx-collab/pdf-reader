@@ -1,16 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 import { cacheAudio, countCached, offlineSupported } from "./offlineCache.js";
+import {
+  isBackgroundFetchSupported,
+  getActiveBackgroundFetch,
+  startBackgroundDownload,
+  backgroundFetchId,
+} from "./backgroundDownload.js";
 
 // Shared "download this book for offline listening" logic — used by both
 // the library card (download without opening the book) and the reader's
-// offline sheet (download while reading).
-export function useOfflineDownload({ id, numPages, voice, rate }) {
+// offline sheet. Prefers the Background Fetch API (survives closing the
+// tab/app — Chrome/Edge only) and falls back to an in-page fetch loop
+// (only runs while this tab stays open) everywhere else.
+export function useOfflineDownload({ id, numPages, voice, rate, title }) {
   const [cachedCount, setCachedCount] = useState(0);
   const [downloading, setDownloading] = useState(false);
+  const [background, setBackground] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, failed: 0 });
   const [notice, setNotice] = useState("");
   const cancelRef = useRef(false);
+  const bgRegRef = useRef(null);
+  const bgSupportedRef = useRef(false);
 
   const refresh = useCallback(() => {
     if (!id || !numPages || !voice || !offlineSupported) return;
@@ -22,10 +33,48 @@ export function useOfflineDownload({ id, numPages, voice, rate }) {
     refresh();
   }, [refresh]);
 
-  const download = useCallback(async () => {
-    if (!id || !numPages || !voice || downloading) return;
-    setDownloading(true);
-    setNotice("");
+  // Detect an already-running background download — e.g. the app was
+  // closed and reopened while Chrome kept downloading in the background.
+  useEffect(() => {
+    if (!id || !numPages || !voice) return;
+    let cancelled = false;
+    isBackgroundFetchSupported().then((supported) => {
+      bgSupportedRef.current = supported;
+      if (!supported || cancelled) return;
+      getActiveBackgroundFetch(id, voice, rate).then((bgReg) => {
+        if (cancelled || !bgReg) return;
+        bgRegRef.current = bgReg;
+        setDownloading(true);
+        setBackground(true);
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, numPages, voice, rate]);
+
+  // Pick up completion messages from the service worker — fires even if
+  // this component wasn't mounted when the download actually finished.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !id || !voice) return;
+    const expectedId = backgroundFetchId(id, voice, rate);
+    function onMessage(event) {
+      if (event.data?.type !== "background-download-done" || event.data.id !== expectedId) return;
+      setDownloading(false);
+      setBackground(false);
+      bgRegRef.current = null;
+      setNotice(
+        event.data.failed > 0
+          ? `${event.data.failed} page${event.data.failed === 1 ? "" : "s"} failed — tap Download to retry them.`
+          : ""
+      );
+      refresh();
+    }
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [id, voice, rate, refresh]);
+
+  const downloadForeground = useCallback(async () => {
     cancelRef.current = false;
     let done = 0;
     let failed = 0;
@@ -56,18 +105,57 @@ export function useOfflineDownload({ id, numPages, voice, rate }) {
       failed > 0 ? `${failed} page${failed === 1 ? "" : "s"} failed — tap Download to retry them.` : ""
     );
     refresh();
-  }, [id, numPages, voice, rate, downloading, refresh]);
+  }, [id, numPages, voice, rate, refresh]);
+
+  const download = useCallback(async () => {
+    if (!id || !numPages || !voice || downloading) return;
+    setDownloading(true);
+    setNotice("");
+
+    if (bgSupportedRef.current) {
+      setBackground(true);
+      try {
+        const requests = [];
+        for (let p = 0; p < numPages; p++) {
+          requests.push(api.ttsUrl(id, p, voice, rate));
+          requests.push(api.pageUrl(id, p));
+        }
+        bgRegRef.current = await startBackgroundDownload({
+          bookId: id,
+          title: title || "book",
+          voice,
+          rate,
+          requests,
+        });
+        return; // progress/completion arrives via the SW message listener above
+      } catch (e) {
+        // Quota errors, a stuck duplicate registration, etc. — fall back to
+        // the in-page loop so the click still does something.
+        console.warn("Background download failed to start, falling back:", e.message);
+        setBackground(false);
+      }
+    }
+
+    await downloadForeground();
+  }, [id, numPages, voice, rate, title, downloading, downloadForeground]);
 
   const cancel = useCallback(() => {
-    cancelRef.current = true;
+    if (background && bgRegRef.current) {
+      bgRegRef.current.abort().catch(() => {});
+      bgRegRef.current = null;
+      setBackground(false);
+    } else {
+      cancelRef.current = true;
+    }
     setDownloading(false);
-  }, []);
+  }, [background]);
 
   return {
     supported: offlineSupported,
     cachedCount,
     isComplete: numPages > 0 && cachedCount >= numPages,
     downloading,
+    background,
     progress,
     notice,
     download,

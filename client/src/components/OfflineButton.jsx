@@ -6,20 +6,28 @@ import { Download, Check, X } from "lucide-react";
 // discoverable on touch, so callers needing clarity on mobile should use
 // `label`.
 export default function OfflineButton({ state, onDownload, onCancel, size = 34, label = false, className = "" }) {
-  const { downloading, progress, isComplete, cachedCount } = state;
-  const pct = downloading && progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+  const { downloading, background, progress, isComplete, cachedCount } = state;
+  // A background download's fine-grained progress lives in the OS/browser
+  // notification, not here — so with no per-page count to show, spin
+  // indeterminately instead of drawing a (fake) 0% ring.
+  const indeterminate = background || !progress.total;
+  const pct = !indeterminate ? Math.round((progress.done / progress.total) * 100) : 0;
 
   if (downloading) {
     const ring = (
       <span
-        className="relative shrink-0 rounded-full grid place-items-center"
-        style={{
-          width: size,
-          height: size,
-          background: `conic-gradient(#a78bfa ${pct}%, rgba(255,255,255,0.1) ${pct}%)`,
-        }}
+        className={`relative shrink-0 rounded-full grid place-items-center ${indeterminate ? "animate-spin" : ""}`}
+        style={
+          indeterminate
+            ? { width: size, height: size, background: "conic-gradient(#a78bfa, rgba(255,255,255,0.1))" }
+            : {
+                width: size,
+                height: size,
+                background: `conic-gradient(#a78bfa ${pct}%, rgba(255,255,255,0.1) ${pct}%)`,
+              }
+        }
       >
-        <span className="absolute inset-[3px] rounded-full bg-[#14161d] grid place-items-center">
+        <span className={`absolute inset-[3px] rounded-full bg-[#14161d] grid place-items-center ${indeterminate ? "animate-[spin_1s_linear_infinite_reverse]" : ""}`}>
           <X size={size * 0.4} />
         </span>
       </span>
@@ -30,7 +38,11 @@ export default function OfflineButton({ state, onDownload, onCancel, size = 34, 
           e.stopPropagation();
           onCancel();
         }}
-        title={`Downloading… ${progress.done}/${progress.total} (tap to cancel)`}
+        title={
+          background
+            ? "Downloading in the background — tap to cancel"
+            : `Downloading… ${progress.done}/${progress.total} (tap to cancel)`
+        }
         className={
           label
             ? `flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300 ${className}`
@@ -38,7 +50,7 @@ export default function OfflineButton({ state, onDownload, onCancel, size = 34, 
         }
       >
         {ring}
-        {label && <span>{pct}%</span>}
+        {label && <span>{indeterminate ? "Downloading…" : `${pct}%`}</span>}
       </button>
     );
   }

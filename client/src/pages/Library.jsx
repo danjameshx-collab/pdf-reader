@@ -11,7 +11,13 @@ function formatDate(ts) {
 }
 
 function BookCard({ book, onOpen, onDelete }) {
-  const offline = useOfflineDownload({ id: book.id, numPages: book.numPages, voice: book.voice, rate: book.rate });
+  const offline = useOfflineDownload({
+    id: book.id,
+    numPages: book.numPages,
+    voice: book.voice,
+    rate: book.rate,
+    title: book.title,
+  });
   const pct = book.numPages ? Math.round(((book.lastPage + 1) / book.numPages) * 100) : 0;
 
   return (
